@@ -1,0 +1,15 @@
+{
+  "traction_mdrvct": true,
+  "rc_ht10": true,
+  "rc_ht06": true,
+  "tourelle_std": true,
+  "batt_main": true,
+  "batt_turret": true,
+  "current_sensor": true,
+  "temp_mcp9808": true,
+  "temp_dht11": true,
+  "fan_pwm": true,
+  "rfid_rc522": true,
+  "bt_hm10": true,
+  "status_leds": true
+}
