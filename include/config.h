@@ -57,7 +57,7 @@
 
 // -- Firmware information --
 #define FIRMWARE_VERSION "TankOS 1.3 (Basé sur FreeRTOS pour microcontrôleur AVR)"
-#define LAST_BUILD_DATE "16/11/2026 @ 21:45"
+#define LAST_BUILD_DATE "17/11/2026 @ 21:12"
 #define FIRMWARE_AUTHOR "Projet Tank Terminale - Specialite SI 2026 - 2027"
 
 // -- RELAY STATE MACROS --
