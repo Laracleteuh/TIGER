@@ -1,6 +1,6 @@
-# Tank OS
+# TIGER
 
-Firmware TankOS du projet Tank Terminale, un char à chenilles avec tourelle motorisée.
+Firmware TIGER du projet TID-70, un char à chenilles avec tourelle motorisée.
 
 ## Matériel
 
