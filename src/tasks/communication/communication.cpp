@@ -121,6 +121,40 @@ static void dispatch(const CmdTable* tablePtr, char* buffer, Print& out) {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Trame de telemetrie (BT uniquement)
+// Format : TM,<temp C>,<batt principale %>,<batt tourelle %>,<courant A>,<limite vitesse %>
+// Un champ vide signifie capteur absent ou mesure invalide.
+// ---------------------------------------------------------------------------------------------
+#if HW_HAS_BT_HM10
+static void sendTelemetryFrame(Print& out) {
+  out.print(F("TM,"));
+
+#if HW_HAS_TEMPERATURE
+  if (!isnan(lastKnownTempC)) {
+    out.print(lastKnownTempC, 1);
+  }
+#endif
+  out.print(',');
+
+  out.print(getBatteryPercentage(MAIN_BATTERY_PIN));
+  out.print(',');
+
+#if HW_HAS_TURRET_BATTERY
+  out.print(getBatteryPercentage(TURRET_BATTERY_PIN));
+#endif
+  out.print(',');
+
+#if HW_HAS_CURRENT_SENSOR
+  out.print(getCurrentAmps(), 1);
+#endif
+  out.print(',');
+
+  out.print(static_cast<int>(btSpeedLimit * 100.0f + 0.5f));
+  out.println();
+}
+#endif
+
+// ---------------------------------------------------------------------------------------------
 // Handlers
 // ---------------------------------------------------------------------------------------------
 
@@ -665,7 +699,7 @@ static const Command TOP_CMDS[] PROGMEM = {
 static const CmdTable TOP_TABLE PROGMEM = { TOP_CMDS, TABLE_SIZE(TOP_CMDS), NULL, cmdUnknown };
 
 // ---------------------------------------------------------------------------------------------
-// Point d'entrée unique
+// Point d'entree unique
 // ---------------------------------------------------------------------------------------------
 static void processCommand(char* buffer, Print& out) {
   if (isAdminCommand(buffer) && !isAdminUnlocked()) {
@@ -766,36 +800,9 @@ void updateCommunication(int swdRaw) {
 #endif
 
 #if HW_HAS_BT_HM10
-  if (setupIsComplete && isTelemetryActive && ((currentTick - lastTempSendTick) * portTICK_PERIOD_MS >= telemetryIntervalMs)) {
-    int mainPct = getBatteryPercentage(MAIN_BATTERY_PIN);
-
-#if HW_HAS_TEMPERATURE
-    if (!isnan(lastKnownTempC)) {
-      BT_SERIAL.print(F("T:"));
-      BT_SERIAL.print(lastKnownTempC);
-      BT_SERIAL.print(F("C | "));
-    }
-#endif
-
-    BT_SERIAL.print(F("MAIN:"));
-    BT_SERIAL.print(mainPct);
-    BT_SERIAL.print(F("%"));
-
-#if HW_HAS_TURRET_BATTERY
-    int turretPct = getBatteryPercentage(TURRET_BATTERY_PIN);
-    BT_SERIAL.print(F(" | TUR:"));
-    BT_SERIAL.print(turretPct);
-    BT_SERIAL.print(F("%"));
-#endif
-
-#if HW_HAS_CURRENT_SENSOR
-    float amps = getCurrentAmps();
-    BT_SERIAL.print(F(" | "));
-    BT_SERIAL.print(amps, 1);
-    BT_SERIAL.print(F("A"));
-#endif
-
-    BT_SERIAL.println();
+  if (setupIsComplete && isTelemetryActive &&
+      ((currentTick - lastTempSendTick) * portTICK_PERIOD_MS >= telemetryIntervalMs)) {
+    sendTelemetryFrame(BT_SERIAL);
     lastTempSendTick = currentTick;
   }
 #else
