@@ -56,9 +56,9 @@
 #endif
 
 // -- Firmware information --
-#define FIRMWARE_VERSION "TankOS 1.3 (Basé sur FreeRTOS pour microcontrôleur AVR)"
-#define LAST_BUILD_DATE "17/11/2026 @ 21:12"
-#define FIRMWARE_AUTHOR "Projet Tank Terminale - Specialite SI 2026 - 2027"
+#define FIRMWARE_VERSION "TIGER MkI (Basé sur FreeRTOS pour microcontrôleur AVR)"
+#define LAST_BUILD_DATE "18/11/2026 @ 21:00"
+#define FIRMWARE_AUTHOR "Projet Tank Terminale - TID-70  - Specialite SI 2026 - 2027"
 
 // -- RELAY STATE MACROS --
 #define RELAY_ON HIGH
