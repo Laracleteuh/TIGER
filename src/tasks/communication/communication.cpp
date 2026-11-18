@@ -31,6 +31,12 @@ const char* modeVentilation = "OFF";
 int vitesseActuellePourcent = 0;
 int dynTempMin = 25;
 int dynTempMax = 45;
+
+// Zone du switch SWD (ventilation) : le switch est maitre, l'app peut imposer un mode
+// jusqu'au prochain changement de zone de SWD.
+enum SwdZone : uint8_t { SWD_ZONE_OFF = 0, SWD_ZONE_MANUAL = 1, SWD_ZONE_AUTO = 2 };
+static uint8_t lastSwdZone = 0xFF;          // 0xFF = aucune zone encore lue
+static const char* fanOverrideMode = NULL;  // NULL = le switch SWD commande
 #endif
 
 #if HW_HAS_TEMPERATURE
@@ -122,7 +128,7 @@ static void dispatch(const CmdTable* tablePtr, char* buffer, Print& out) {
 
 // ---------------------------------------------------------------------------------------------
 // Trame de telemetrie (BT uniquement)
-// Format : TM,<temp C>,<batt principale %>,<batt tourelle %>,<courant A>,<limite vitesse %>
+// Format : TM,<temp C>,<batt principale %>,<batt tourelle %>,<courant A>,<limite vitesse %>,<mode ventilation>
 // Un champ vide signifie capteur absent ou mesure invalide.
 // ---------------------------------------------------------------------------------------------
 #if HW_HAS_BT_HM10
@@ -150,6 +156,13 @@ static void sendTelemetryFrame(Print& out) {
   out.print(',');
 
   out.print(static_cast<int>(btSpeedLimit * 100.0f + 0.5f));
+  out.print(',');
+
+#if HW_HAS_FAN_PWM
+  out.print(modeVentilation);
+#else
+  out.print(F("NA"));
+#endif
   out.println();
 }
 #endif
@@ -384,21 +397,25 @@ static void cmdFanSpdSet(char* arg, Print& out) {
 static void cmdFanCtrlShow(char*, Print& out) {
   out.print(F("I0FC - current fan control mode: "));
   out.println(modeVentilation);
+  out.print(F("I0FC - source: "));
+  out.println(fanOverrideMode ? F("app (annule au prochain changement de SWD)") : F("switch SWD"));
 }
 
+// Les handlers ne changent pas la sortie directement : ils posent une demande,
+// appliquee par updateCommunication() dans le meme cycle.
 static void cmdFanCtrlAuto(char*, Print& out) {
-  modeVentilation = "AUTO";
-  out.println(F("I0FC - fan control mode set to AUTO"));
+  fanOverrideMode = "AUTO";
+  out.println(F("I0FC - fan control mode set to AUTO (app)"));
 }
 
 static void cmdFanCtrlManual(char*, Print& out) {
-  modeVentilation = "MANUAL";
-  out.println(F("I0FC - fan control mode set to MANUAL"));
+  fanOverrideMode = "MANUAL";
+  out.println(F("I0FC - fan control mode set to MANUAL (app)"));
 }
 
 static void cmdFanCtrlOff(char*, Print& out) {
-  modeVentilation = "OFF";
-  out.println(F("I0FC - fan control mode set to OFF"));
+  fanOverrideMode = "OFF";
+  out.println(F("I0FC - fan control mode set to OFF (app)"));
 }
 #endif // HW_HAS_FAN_PWM
 
@@ -471,6 +488,7 @@ static void cmdReset(char*, Print& out) {
   btSpeedLimit = 1.0f;
 #if HW_HAS_FAN_PWM
   manualFanSpeedPercent = 0;
+  fanOverrideMode = NULL;   // rend la main au switch SWD
 #endif
   out.println(F("default values restored"));
 }
@@ -709,6 +727,48 @@ static void processCommand(char* buffer, Print& out) {
   dispatch(&TOP_TABLE, buffer, out);
 }
 
+// ---------------------------------------------------------------------------------------------
+// Ventilation : sortie PWM selon le mode demande
+// ---------------------------------------------------------------------------------------------
+#if HW_HAS_FAN_PWM
+static void applyFanOutput(const char* mode) {
+  if (strcmp(mode, "OFF") == 0) {
+    OCR2B = 0;
+    vitesseActuellePourcent = 0;
+  } else if (strcmp(mode, "MANUAL") == 0) {
+    OCR2B = constrain(map(manualFanSpeedPercent, 0, 100, 0, 79), 0, 79);
+    vitesseActuellePourcent = manualFanSpeedPercent;
+  } else {  // AUTO
+#if HW_HAS_TEMPERATURE
+    if (!isnan(lastKnownTempC)) {
+      int fanAutoSpeed = map((int)lastKnownTempC, dynTempMin, dynTempMax, 0, 79);
+      OCR2B = constrain(fanAutoSpeed, 0, 79);
+    } else {
+      OCR2B = 40;
+    }
+#else
+    OCR2B = 40;
+#endif
+    vitesseActuellePourcent = map(OCR2B, 0, 79, 0, 100);
+  }
+  modeVentilation = mode;
+}
+
+static const char* swdZoneModeName(SwdZone zone) {
+  switch (zone) {
+    case SWD_ZONE_OFF:    return "OFF";
+    case SWD_ZONE_MANUAL: return "MANUAL";
+    default:              return "AUTO";
+  }
+}
+
+static SwdZone swdZoneFromRaw(int swdRaw) {
+  if (swdRaw < 1250) return SWD_ZONE_OFF;
+  if (swdRaw <= 1750) return SWD_ZONE_MANUAL;
+  return SWD_ZONE_AUTO;
+}
+#endif
+
 void setupCommunication() {
 #if HW_HAS_BT_HM10
   BT_SERIAL.begin(BT_BAUD);
@@ -772,29 +832,14 @@ void updateCommunication(int swdRaw) {
 #endif
 
 #if HW_HAS_FAN_PWM
-  if (swdRaw < 1250) {
-    OCR2B = 0;
-    modeVentilation = "OFF";
-    vitesseActuellePourcent = 0;
-  } else if (swdRaw >= 1250 && swdRaw <= 1750) {
-    int pwmValue = map(manualFanSpeedPercent, 0, 100, 0, 79);
-    OCR2B = constrain(pwmValue, 0, 79);
-    modeVentilation = "MANUAL";
-    vitesseActuellePourcent = manualFanSpeedPercent;
-  } else {
-    modeVentilation = "AUTO";
-#if HW_HAS_TEMPERATURE
-    if (!isnan(lastKnownTempC)) {
-      int fanAutoSpeed = map((int)lastKnownTempC, dynTempMin, dynTempMax, 0, 79);
-      OCR2B = constrain(fanAutoSpeed, 0, 79);
-    } else {
-      OCR2B = 40;
-    }
-#else
-    OCR2B = 40;
-#endif
-    vitesseActuellePourcent = map(OCR2B, 0, 79, 0, 100);
+  // Le switch SWD est maitre : tout changement de zone annule la demande de l'app.
+  SwdZone zone = swdZoneFromRaw(swdRaw);
+  if ((uint8_t)zone != lastSwdZone) {
+    lastSwdZone = (uint8_t)zone;
+    fanOverrideMode = NULL;
   }
+  const char* mode = (fanOverrideMode != NULL) ? fanOverrideMode : swdZoneModeName(zone);
+  applyFanOutput(mode);
 #else
   (void)swdRaw;
 #endif
